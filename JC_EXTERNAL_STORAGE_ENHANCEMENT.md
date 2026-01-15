@@ -1,4 +1,5 @@
 # JC Agent - External Storage Research Enhancement
+
 ## "One More Because I Am a Champion" 🏆
 
 **Enhancement Date:** January 15, 2026  
@@ -12,6 +13,7 @@
 This enhancement gives JC the ability to discover, index, and research information from external drives, USB storage, and mounted volumes. Perfect for accessing local AI models, project files, and offline knowledge bases.
 
 **Key Capabilities:**
+
 - 🔍 **Drive Discovery** - Automatically detect all connected storage devices
 - 📚 **Smart Indexing** - Index important files (AI models, docs, code, data)
 - 🔎 **Fast Search** - Search across all indexed files
@@ -25,11 +27,13 @@ This enhancement gives JC the ability to discover, index, and research informati
 ### 1. New Module: `jc/external_storage.py` (661 lines)
 
 **Classes:**
+
 - `StorageDevice` - Represents a drive with metadata
 - `FileMetadata` - Indexed file information
 - `ExternalStorageManager` - Core management class
 
 **Key Features:**
+
 ```python
 # Discover all drives
 devices = discover_drives()  # Returns list of StorageDevice
@@ -48,6 +52,7 @@ summary = get_drive_summary()  # Human-readable report
 ```
 
 **Indexed File Types:**
+
 - **AI Models:** .gguf, .safetensors, .pt, .pth, .onnx, .bin, .model
 - **Documentation:** .md, .txt, .pdf, .docx, .html, .rst
 - **Code:** .py, .js, .ts, .java, .cpp, .c, .go, .rs
@@ -56,6 +61,7 @@ summary = get_drive_summary()  # Human-readable report
 - **Media:** .jpg, .png, .gif, .mp4, .mp3, .wav
 
 **Special Locations Detected:**
+
 - **BunkerAI:** `g:\`, `g:\BunkerAI.app` (Local Llama-3.1-8B model)
 - **LM Studio:** `f:\.lmstudio`, `f:\models`
 - **Projects:** `f:\git hub insurance app`, `f:\jc-redd-ai`
@@ -65,9 +71,11 @@ summary = get_drive_summary()  # Human-readable report
 ### 2. New API Endpoints (5 endpoints)
 
 #### `GET /storage/discover`
+
 Discover all available storage devices.
 
 **Response:**
+
 ```json
 {
   "devices": [
@@ -87,9 +95,11 @@ Discover all available storage devices.
 ```
 
 #### `GET /storage/summary`
+
 Get human-readable summary of all drives.
 
 **Response:**
+
 ```json
 {
   "summary": "📦 External Storage Summary:\n\n  G: (USB Drive) - removable\n    Size: 29.8GB total, 14.0GB free (53% used)\n    Status: ✗ Not indexed\n\n🎯 Special Locations Found:\n  bunker_ai:\n    - g:\n    - g:\\BunkerAI.app\n\n📊 Index Statistics:\n  Total files indexed: 0"
@@ -97,13 +107,16 @@ Get human-readable summary of all drives.
 ```
 
 #### `POST /storage/index`
+
 Index files on a drive for research.
 
 **Parameters:**
+
 - `drive` (required): Drive letter or mount point (e.g., 'G:', '/mnt/usb')
 - `max_files` (optional): Maximum files to index (default: 10000)
 
 **Response:**
+
 ```json
 {
   "drive": "G:",
@@ -113,15 +126,18 @@ Index files on a drive for research.
 ```
 
 #### `GET /storage/search`
+
 Search indexed files.
 
 **Parameters:**
+
 - `query` (required): Search query
 - `file_types` (optional): Comma-separated extensions (e.g., '.py,.md')
 - `drives` (optional): Comma-separated drive letters
 - `limit` (optional): Maximum results (default: 50)
 
 **Response:**
+
 ```json
 {
   "query": "llama model",
@@ -141,9 +157,11 @@ Search indexed files.
 ```
 
 #### `GET /storage/ai-models`
+
 Find all AI models on external storage.
 
 **Response:**
+
 ```json
 {
   "count": 5,
@@ -172,6 +190,7 @@ Find all AI models on external storage.
 ### 3. New Tests: `tests/test_external_storage.py` (15 tests)
 
 **Test Coverage:**
+
 - ✅ StorageDevice creation and serialization
 - ✅ FileMetadata creation and serialization
 - ✅ ExternalStorageManager initialization
@@ -260,19 +279,24 @@ python -m jc --list-ai-models
 Based on the attached folders, here's what JC can now access:
 
 ### Drive G: (BunkerAI)
+
 **Detected Special Files:**
+
 - 🤖 **Llama-3.1-8B-Instruct-Q4_K_M.gguf** - Local AI model (8B parameters, 4-bit quantized)
 - 📦 **BunkerAI.app** - macOS application with bundled llama.cpp
 - 🖥️ **Server folders** - cpu/, cuda/, cuda_legacy/ for different hardware
 - ⚙️ **Batch scripts** - Windows/Mac launchers and control scripts
 
 **Research Capabilities:**
+
 - Access local Llama 3.1 model for offline inference
 - Find llama.cpp executables (llama-server, llama-cli, etc.)
 - Research model parameters and configurations
 
 ### Drive F: (Projects & Development)
+
 **Detected Special Folders:**
+
 - 💼 **git hub insurance app/** - Insurance training application
 - 🤖 **jc-redd-ai/** - JC-related AI project
 - 🔷 **.lmstudio/** - LM Studio configuration and models
@@ -281,9 +305,10 @@ Based on the attached folders, here's what JC can now access:
 - 🐧 **Kali Linux** - ISO and boot files
 
 **Research Capabilities:**
+
 - Index all project files
 - Search across multiple codebases
-- Find training data (unit-*.json files)
+- Find training data (unit-\*.json files)
 - Access LM Studio models
 - Research insurance domain knowledge
 
@@ -292,6 +317,7 @@ Based on the attached folders, here's what JC can now access:
 ## 💡 Integration with Existing Features
 
 ### 1. LLM Provider Integration
+
 ```python
 # jc/llm_provider.py - Add local model detection
 from jc.external_storage import find_ai_models
@@ -299,15 +325,16 @@ from jc.external_storage import find_ai_models
 def discover_local_models():
     """Find local AI models and add to provider list."""
     models = find_ai_models()
-    
+
     # Filter for GGUF models (llama.cpp compatible)
     gguf_models = [m for m in models if m.file_type == '.gguf']
-    
+
     # Add to Ollama provider or direct llama.cpp
     return gguf_models
 ```
 
 ### 2. Research Enhancement
+
 ```python
 # jc/research.py - Add external storage search
 from jc.external_storage import search_files
@@ -316,10 +343,10 @@ def research_with_local_files(query: str):
     """Research using both web and local files."""
     # Search web
     web_results = web_search(query)
-    
+
     # Search local storage
     local_results = search_files(query, file_types=['.md', '.pdf', '.txt'])
-    
+
     # Combine results
     return {
         'web': web_results,
@@ -328,6 +355,7 @@ def research_with_local_files(query: str):
 ```
 
 ### 3. Workspace Indexer Integration
+
 ```python
 # jc/workspace_indexer.py - Include external drives
 from jc.external_storage import get_storage_manager
@@ -336,14 +364,14 @@ def index_workspace_with_external(workspace_id: str):
     """Index workspace and connected external drives."""
     # Index workspace
     metadata = index_workspace(workspace_id)
-    
+
     # Add external storage info
     storage_mgr = get_storage_manager()
     metadata['external_storage'] = {
         'devices': storage_mgr.devices,
         'indexed_files': len(storage_mgr.file_index)
     }
-    
+
     return metadata
 ```
 
@@ -352,29 +380,36 @@ def index_workspace_with_external(workspace_id: str):
 ## 🏆 Why This Makes JC a Champion
 
 ### 1. **Offline Research Capability**
+
 No internet required! JC can research from local drives:
+
 - Insurance training materials (F:\git hub insurance app)
 - Code projects (F:\jc-redd-ai)
 - Local AI models (G:\BunkerAI.app)
 - Documentation and data files
 
 ### 2. **Local AI Model Discovery**
+
 Automatically finds and catalogs:
+
 - **Llama-3.1-8B** on G: drive (detected!)
 - LM Studio models on F: drive
 - Any other .gguf, .safetensors, .pt models
 
 ### 3. **Cost Savings**
+
 - Use local models instead of API calls
 - Research from local files (zero API costs)
 - Offline capability (work anywhere)
 
 ### 4. **Privacy**
+
 - All research stays local
 - No data sent to external APIs
 - Full control over sensitive information
 
 ### 5. **Speed**
+
 - Local file search is instant
 - No network latency
 - Fast model inference with BunkerAI
@@ -384,11 +419,13 @@ Automatically finds and catalogs:
 ## 🧪 Testing Checklist
 
 ### Unit Tests
+
 - [x] Create test_external_storage.py (15 tests)
 - [ ] Run: `pytest tests/test_external_storage.py -v`
 - [ ] Verify: All tests passing
 
 ### Integration Tests
+
 - [ ] Test drive discovery on Windows
 - [ ] Test drive discovery on Mac/Linux
 - [ ] Index G: drive (BunkerAI)
@@ -398,6 +435,7 @@ Automatically finds and catalogs:
 - [ ] Test API endpoints with auth
 
 ### Manual Tests
+
 ```bash
 # 1. Start JC API
 python jc_agent_api.py
@@ -425,16 +463,19 @@ curl -H "X-API-Key: $API_KEY" \
 ## 📊 Performance Expectations
 
 ### Indexing Performance
+
 - **Small drive** (<10GB, <1000 files): 5-10 seconds
 - **Medium drive** (10-100GB, 1000-10000 files): 30-60 seconds
 - **Large drive** (>100GB, >10000 files): 2-5 minutes (with 10k file limit)
 
 ### Search Performance
+
 - **Indexed search:** <100ms for 10k files
 - **Full-text search:** <500ms for 10k files
 - **AI model detection:** <50ms (filtered by extension)
 
 ### Storage Requirements
+
 - **Index file:** ~500KB for 10k files
 - **Memory usage:** ~50MB for 10k indexed files
 - **Disk I/O:** Minimal (only during indexing)
@@ -444,6 +485,7 @@ curl -H "X-API-Key: $API_KEY" \
 ## 🔧 Configuration
 
 ### Environment Variables
+
 ```env
 # .env
 
@@ -462,9 +504,11 @@ STORAGE_CACHE_TTL=3600  # 1 hour
 ```
 
 ### Storage Directory
+
 Default location: `~/.jc-agent/external-storage/`
 
 Files:
+
 - `storage-index.json` - Main index file
 - `storage-*.log` - Indexing logs
 
@@ -473,23 +517,23 @@ Files:
 ## 📈 Future Enhancements
 
 ### Phase 2 (Planned)
+
 1. **Auto-indexing on drive mount**
    - Detect when USB drive is plugged in
    - Automatically index new drives
-   
 2. **Full-text search**
    - Index file contents (not just metadata)
    - Search inside documents
-   
 3. **Smart caching**
    - Cache frequently accessed files
    - Prefetch likely files
-   
 4. **Network drive support**
+
    - Index SMB/NFS shares
    - Cloud storage (Dropbox, OneDrive)
 
 5. **CLI commands**
+
    ```bash
    jc storage discover
    jc storage index G:
@@ -517,19 +561,22 @@ Files:
 ✅ Find AI models (detected Llama-3.1-8B on G:!)  
 ✅ Research from local documents  
 ✅ Access project files offline  
-✅ Zero API costs for local research  
+✅ Zero API costs for local research
 
 **Files Added:**
+
 - `jc/external_storage.py` (661 lines)
 - `tests/test_external_storage.py` (204 lines)
 - 5 new API endpoints in `jc_agent_api.py`
 
 **Test Status:**
+
 - Unit tests: Ready (15 tests created)
 - Integration tests: Pending
 - Manual tests: Pending
 
 **Next Steps:**
+
 1. Run tests: `pytest tests/test_external_storage.py -v`
 2. Index G: drive to find Llama model
 3. Index F: drive to access projects
