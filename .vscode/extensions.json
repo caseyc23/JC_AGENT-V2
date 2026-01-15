@@ -1,0 +1,11 @@
+{
+  "recommendations": [
+    "anthropic.claude-code"
+  ],
+  "unwantedRecommendations": []
+}
+{
+    "recommendations": [
+        "ms-azuretools.vscode-docker"
+    ]
+}

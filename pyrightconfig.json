@@ -1,0 +1,18 @@
+{
+  "include": ["jc", "*.py"],
+  "exclude": [
+    "**/node_modules",
+    "**/__pycache__",
+    ".venv*",
+    "third_party",
+    "integrations/docs"
+  ],
+  "reportMissingTypeStubs": false,
+  "reportUnknownMemberType": false,
+  "reportUnknownParameterType": false,
+  "reportUnknownArgumentType": false,
+  "reportUnknownVariableType": false,
+  "pythonVersion": "3.12",
+  "pythonPlatform": "All",
+  "typeCheckingMode": "basic"
+}

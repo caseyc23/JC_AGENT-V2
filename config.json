@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "api": {
+    "host": "localhost",
+    "port": 8000
+  },
+  "notes": "Do not store secrets here. Use .env / environment variables."
+}

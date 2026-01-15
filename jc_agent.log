@@ -1,0 +1,44 @@
+2026-01-10 00:41:47,077 - JC - ERROR - Import error: cannot import name 'generate' from 'elevenlabs' (/home/codespace/.local/lib/python3.12/site-packages/elevenlabs/__init__.py). Make sure all dependencies are installed.
+2026-01-10 00:41:47,077 - JC - INFO - Run: pip install -r requirements.txt
+2026-01-10 00:58:12,391 - JC - INFO - ============================================================
+2026-01-10 00:58:12,391 - JC - INFO - Initializing JC - Your AI Business Partner
+2026-01-10 00:58:12,391 - JC - INFO - In memory of a friend, built for greatness
+2026-01-10 00:58:12,391 - JC - INFO - ============================================================
+2026-01-10 00:58:12,392 - JC - INFO - Loading JC's brain (memory & personality)...
+2026-01-10 00:58:13,344 - JC - INFO - ✓ Brain loaded
+2026-01-10 00:58:13,344 - JC - INFO - Initializing research capabilities...
+2026-01-10 00:58:13,345 - JC - INFO - ✓ Research ready
+2026-01-10 00:58:13,345 - JC - INFO - Connecting to platforms...
+2026-01-10 00:58:13,345 - JC - INFO - ✓ Platforms connected
+2026-01-10 00:58:13,455 - JC - WARNING - Voice initialization failed; continuing without voice
+2026-01-10 00:58:13,455 - JC - INFO - 
+🎉 JC is ready! Let's conquer the AI market together!
+
+2026-01-10 00:59:26,617 - JC - INFO - ============================================================
+2026-01-10 00:59:26,617 - JC - INFO - Initializing JC - Your AI Business Partner
+2026-01-10 00:59:26,618 - JC - INFO - In memory of a friend, built for greatness
+2026-01-10 00:59:26,618 - JC - INFO - ============================================================
+2026-01-10 00:59:26,618 - JC - INFO - Loading JC's brain (memory & personality)...
+2026-01-10 00:59:26,913 - JC - INFO - ✓ Brain loaded
+2026-01-10 00:59:26,914 - JC - INFO - Initializing research capabilities...
+2026-01-10 00:59:26,914 - JC - INFO - ✓ Research ready
+2026-01-10 00:59:26,914 - JC - INFO - Connecting to platforms...
+2026-01-10 00:59:26,914 - JC - INFO - ✓ Platforms connected
+2026-01-10 00:59:27,038 - JC - WARNING - Voice initialization failed; continuing without voice
+2026-01-10 00:59:27,038 - JC - INFO - 
+🎉 JC is ready! Let's conquer the AI market together!
+
+2026-01-10 00:59:40,833 - JC - INFO - ============================================================
+2026-01-10 00:59:40,833 - JC - INFO - Initializing JC - Your AI Business Partner
+2026-01-10 00:59:40,833 - JC - INFO - In memory of a friend, built for greatness
+2026-01-10 00:59:40,833 - JC - INFO - ============================================================
+2026-01-10 00:59:40,833 - JC - INFO - Loading JC's brain (memory & personality)...
+2026-01-10 00:59:41,115 - JC - INFO - ✓ Brain loaded
+2026-01-10 00:59:41,116 - JC - INFO - Initializing research capabilities...
+2026-01-10 00:59:41,116 - JC - INFO - ✓ Research ready
+2026-01-10 00:59:41,116 - JC - INFO - Connecting to platforms...
+2026-01-10 00:59:41,116 - JC - INFO - ✓ Platforms connected
+2026-01-10 00:59:41,246 - JC - WARNING - Voice initialization failed; continuing without voice
+2026-01-10 00:59:41,246 - JC - INFO - 
+🎉 JC is ready! Let's conquer the AI market together!
+

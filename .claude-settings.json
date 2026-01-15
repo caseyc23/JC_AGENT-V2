@@ -1,0 +1,9 @@
+{
+  "initial_permission_mode": "default",
+  "autosave": true,
+  "preferred_location": "sidebar",
+  "respect_git_ignore": true,
+  "allow_dangerously_skip_permissions": false,
+  "trusted_directories": [],
+  "mcp_servers": []
+}

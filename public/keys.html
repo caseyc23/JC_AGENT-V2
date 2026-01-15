@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>JC Key Locker</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        margin: 20px auto;
+        max-width: 960px;
+      }
+      h2 {
+        margin-bottom: 0.5rem;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      input[type="text"],
+      input[type="password"],
+      select,
+      input[type="number"] {
+        padding: 8px;
+        border: 1px solid #c7c7c7;
+        border-radius: 6px;
+        font-size: 14px;
+      }
+      button {
+        padding: 8px 14px;
+        border-radius: 6px;
+        border: none;
+        background: #2563eb;
+        color: white;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button.secondary {
+        background: #6b7280;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 18px;
+      }
+      th,
+      td {
+        border: 1px solid #e5e7eb;
+        padding: 10px;
+        vertical-align: middle;
+      }
+      th {
+        background: #f9fafb;
+        font-weight: 600;
+      }
+      .masked {
+        letter-spacing: 0.3em;
+        color: #4b5563;
+        font-family: monospace;
+      }
+      .progress {
+        height: 10px;
+        border-radius: 999px;
+        overflow: hidden;
+        background: #e5e7eb;
+        width: 180px;
+      }
+      .bar {
+        height: 100%;
+        background: linear-gradient(90deg, #1d4ed8, #06b6d4);
+      }
+      .small {
+        font-size: 12px;
+        color: #6b7280;
+      }
+      .muted {
+        color: #6b7280;
+      }
+      .actions button {
+        margin-right: 6px;
+      }
+      #keysArea {
+        min-height: 60px;
+      }
+      #modal {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.65);
+        align-items: center;
+        justify-content: center;
+      }
+      #modalInner {
+        background: #fff;
+        border-radius: 12px;
+        padding: 18px;
+        width: 90%;
+        max-width: 760px;
+        max-height: 85vh;
+        overflow: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>JC Key Locker</h2>
+    <p class="muted">
+      Keys are stored securely on the server. Raw secrets are never returned to
+      the browser.
+    </p>
+
+    <div style="margin-bottom: 16px">
+      <div class="row">
+        <input
+          id="name"
+          type="text"
+          placeholder="Key name (e.g. OpenAI-main)"
+        />
+        <select id="provider">
+          <option value="openai">OpenAI</option>
+          <option value="huggingface">Hugging Face</option>
+          <option value="openrouter">OpenRouter</option>
+          <option value="anthropic">Anthropic</option>
+          <option value="custom">Custom</option>
+        </select>
+        <input
+          id="budget"
+          type="number"
+          min="0"
+          step="0.01"
+          placeholder="Monthly budget (USD)"
+        />
+      </div>
+      <div class="row">
+        <input
+          id="secret"
+          type="password"
+          placeholder="Paste API key here (will be locked)"
+        />
+        <button id="save">Save (Enter)</button>
+        <input
+          id="passphrase"
+          type="password"
+          placeholder="Passphrase (if needed)"
+        />
+      </div>
+      <div class="small muted">
+        If the server falls back to encrypted storage, the passphrase unlocks
+        your secrets. Keyring-backed storage does not require a passphrase.
+      </div>
+    </div>
+
+    <h3>Stored Keys</h3>
+    <div id="keysArea">Loading…</div>
+
+    <div id="modal">
+      <div id="modalInner">
+        <div
+          style="
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+          "
+        >
+          <h3 id="modalTitle">Details</h3>
+          <button onclick="closeModal()" class="secondary">Close</button>
+        </div>
+        <div id="modalBody"></div>
+      </div>
+    </div>
+
+    <script>
+      const passphraseInput = document.getElementById("passphrase");
+
+      async function listKeys() {
+        const passphrase = passphraseInput.value.trim();
+        const suffix = passphrase ? `?passphrase=${encodeURIComponent(passphrase)}` : "";
+        const res = await fetch(`/keys/list${suffix}`);
+        const data = await res.json();
+        if (!res.ok) {
+          area.innerHTML = `<div class="small muted">${escapeHtml(data.detail || data.error || "Unlock with a passphrase to see keys.")}</div>`;
+          return;
+        }
+        const area = document.getElementById("keysArea");
+        if (data.keys?.length) {
+          const rows = data.keys.map(k => {
+            const usage = k.usage_summary || {};
+            const budget = k.budget_usd || 0;
+            const used = usage.total_estimated_usd || 0;
+            const pct = budget ? Math.min(100, Math.round((used / budget) * 100)) : 0;
+            return `<tr>
+              <td><strong>${escapeHtml(k.name)}</strong><div class="small muted">${escapeHtml(k.provider)} • ${new Date(k.created_at).toLocaleString()}</div></td>
+              <td class="masked">••••••••••</td>
+              <td>
+                ${budget ? `<div class="progress"><div class="bar" style="width:${pct}%;"></div></div><div class="small">${used.toFixed(4)} USD used of ${budget.toFixed(2)} (${pct}%)</div>` : `<div class="small">Estimated spend: ${used.toFixed(4)} USD</div>`}
+              </td>
+              <td class="actions">
+                <button onclick="showUsage('${k.id}')">Usage</button>
+                <button onclick="openEdit('${k.id}')">Edit</button>
+                <button onclick="deleteKey('${k.id}')">Delete</button>
+              </td>
+            </tr>`;
+          }).join("");
+          area.innerHTML = `<table><thead><tr><th>Key</th><th>Secret</th><th>Budget</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table>`;
+        } else {
+          area.innerHTML = "<i>No keys stored yet.</i>";
+        }
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/\"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
+      async function saveKey() {
+        const payload = {
+          name: document.getElementById("name").value.trim(),
+          provider: document.getElementById("provider").value,
+          secret: document.getElementById("secret").value.trim(),
+          budget: document.getElementById("budget").value || undefined,
+          passphrase: passphraseInput.value.trim() || undefined,
+        };
+        if (!payload.name || !payload.provider || !payload.secret) {
+          alert("Name, provider, and secret are required.");
+          return;
+        }
+        const res = await fetch("/keys/add", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          alert(data.detail || data.error || "Unable to save key.");
+          return;
+        }
+        document.getElementById("name").value = "";
+        document.getElementById("secret").value = "";
+        document.getElementById("budget").value = "";
+        listKeys();
+      }
+
+      document.getElementById("save").addEventListener("click", saveKey);
+      document.getElementById("secret").addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          saveKey();
+        }
+      });
+
+      async function deleteKey(id) {
+        if (!confirm("Delete this key?")) {
+          return;
+        }
+        const res = await fetch("/keys/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, passphrase: passphraseInput.value.trim() || undefined }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          alert(data.detail || data.error || "Unable to delete key.");
+        } else {
+          listKeys();
+        }
+      }
+
+      async function showUsage(id) {
+        const res = await fetch(`/keys/usage/${encodeURIComponent(id)}?days=30`);
+        const data = await res.json();
+        if (!res.ok) {
+          alert(data.detail || data.error || "Unable to fetch usage.");
+          return;
+        }
+        const body = `
+          <p><strong>Last ${data.days} days</strong></p>
+          <p>Tokens: ${data.total_tokens}</p>
+          <p>Estimated cost (USD): ${Number(data.total_estimated_usd || 0).toFixed(6)}</p>
+          <p>Entries shown: ${data.entries.length}</p>
+          <div style="max-height:260px; overflow:auto;"><pre>${escapeHtml(JSON.stringify(data.entries, null, 2))}</pre></div>
+        `;
+        openModal("Usage summary", body);
+      }
+
+      async function openEdit(id) {
+        const res = await fetch(`/keys/list${passphraseInput.value.trim() ? `?passphrase=${encodeURIComponent(passphraseInput.value.trim())}` : ""}`);
+        const data = await res.json();
+        if (!res.ok) {
+          alert(data.detail || data.error || "Unlock storage first.");
+          return;
+        }
+        const key = data.keys?.find(v => v.id === id);
+        if (!key) {
+          alert("Key not found (unlock if needed).");
+          return;
+        }
+        const body = `
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <label>Name</label>
+            <input id="edit-name" type="text" value="${escapeHtml(key.name)}" />
+            <label>Provider</label>
+            <input id="edit-provider" type="text" value="${escapeHtml(key.provider)}" />
+            <label>Budget (USD)</label>
+            <input id="edit-budget" type="number" step="0.01" value="${key.budget_usd ?? ""}" />
+            <label>Rotate secret (optional)</label>
+            <input id="edit-secret" type="password" placeholder="New secret" />
+            <div style="display:flex; gap:8px;">
+              <button onclick="applyEdit('${id}')">Save</button>
+              <button onclick="closeModal()" class="secondary">Cancel</button>
+            </div>
+          </div>
+        ";
+        openModal("Edit key", body);
+      }
+
+      async function applyEdit(id) {
+        const payload = {
+          id,
+          name: document.getElementById("edit-name").value.trim(),
+          provider: document.getElementById("edit-provider").value.trim(),
+          budget: document.getElementById("edit-budget").value || undefined,
+          secret: document.getElementById("edit-secret").value || undefined,
+          passphrase: passphraseInput.value.trim() || undefined,
+        };
+        const res = await fetch("/keys/edit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          alert(data.detail || data.error || "Unable to update key.");
+        } else {
+          closeModal();
+          listKeys();
+        }
+      }
+
+      function openModal(title, body) {
+        document.getElementById("modalTitle").innerText = title;
+        document.getElementById("modalBody").innerHTML = body;
+        document.getElementById("modal").style.display = "flex";
+      }
+
+      function closeModal() {
+        document.getElementById("modal").style.display = "none";
+      }
+
+      listKeys();
+    </script>
+  </body>
+</html>

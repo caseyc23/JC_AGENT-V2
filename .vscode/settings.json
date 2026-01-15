@@ -1,0 +1,23 @@
+{
+  // Workspace settings for Claude Code integration
+  "claudeCode.useTerminal": false,
+  "claudeCode.initialPermissionMode": "default",
+  "claudeCode.autosave": true,
+
+  "files.autoSave": "off",
+
+  "python-envs.defaultEnvManager": "ms-python.python:system",
+  "python-envs.pythonProjects": [],
+  "githubIssues.alwaysPromptForNewIssueRepo": true,
+
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+
+  "debug.allowBreakpointsEverywhere": true,
+  "debug.autoExpandLazyVariables": "on",
+  "debug.breakpointsView.presentation": "tree",
+  "debug.closeReadonlyTabsOnEnd": true,
+  "debug.confirmOnExit": "always",
+  "debug.console.acceptSuggestionOnEnter": "on",
+  "debug.console.closeOnEnd": true
+}

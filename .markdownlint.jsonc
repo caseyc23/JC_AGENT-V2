@@ -1,0 +1,19 @@
+{
+  // This repo contains a lot of imported/concatenated docs and templates.
+  // Keep markdownlint enabled, but relax rules that generate excessive noise
+  // for this codebase’s existing doc style.
+  "default": true,
+
+  // Styling/format rules frequently violated by imported docs
+  "MD009": false,
+  "MD013": false,
+  "MD022": false,
+  "MD024": false,
+  "MD025": false,
+  "MD029": false,
+  "MD031": false,
+  "MD032": false,
+  "MD036": false,
+  "MD040": false,
+  "MD060": false
+}

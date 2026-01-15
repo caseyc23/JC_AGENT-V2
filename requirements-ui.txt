@@ -1,0 +1,8 @@
+# Optional UI / launcher dependencies
+#
+# These are only required if you want the Windows tray launcher / desktop tray UI.
+# Base (CLI/API/tests) install is in requirements.txt.
+
+pystray>=0.19.5
+pillow>=10.0.0
+PyQt6>=6.6.0

@@ -1,0 +1,86 @@
+[
+  {
+    "name": "dyad",
+    "url": "https://github.com/dyad-sh/dyad.git",
+    "local_path": "dyad",
+    "license": "Apache-2.0",
+    "notes": "Avoid src/pro/* without separate license review"
+  },
+  {
+    "name": "khoj",
+    "url": "https://github.com/khoj-ai/khoj.git",
+    "local_path": "khoj",
+    "license": "AGPL-3.0",
+    "notes": "Strong copyleft — avoid embedding into runtime"
+  },
+  {
+    "name": "local-deepthink",
+    "url": "https://github.com/iblameandrew/local-deepthink.git",
+    "local_path": "local-deepthink",
+    "license": "UNKNOWN",
+    "notes": "License not found; manual review required"
+  },
+  {
+    "name": "Promptgpt",
+    "url": "https://github.com/howard9192/Promptgpt.git",
+    "local_path": "Promptgpt",
+    "license": "Apache-2.0",
+    "notes": ""
+  },
+  {
+    "name": "SurfSense",
+    "url": "https://github.com/MODSetter/SurfSense.git",
+    "local_path": "SurfSense",
+    "license": "Apache-2.0",
+    "notes": ""
+  },
+  {
+    "name": "Local-NotebookLM",
+    "url": "https://github.com/Goekdeniz-Guelmez/Local-NotebookLM.git",
+    "local_path": "Local-NotebookLM",
+    "license": "Apache-2.0",
+    "notes": ""
+  },
+  {
+    "name": "notebooklm-mcp",
+    "url": "https://github.com/PleasePrompto/notebooklm-mcp.git",
+    "local_path": "notebooklm-mcp",
+    "license": "MIT",
+    "notes": ""
+  },
+  {
+    "name": "PageLM",
+    "url": "https://github.com/CaviraOSS/PageLM.git",
+    "local_path": "PageLM",
+    "license": "UNKNOWN",
+    "notes": "License not found in workspace; manual review required"
+  },
+  {
+    "name": "ai_hacking_study_prompts",
+    "url": "https://github.com/theNetworkChuck/ai_hacking_study_prompts.git",
+    "local_path": "ai_hacking_study_prompts",
+    "license": "UNKNOWN",
+    "notes": ""
+  },
+  {
+    "name": "ai-in-the-terminal",
+    "url": "https://github.com/theNetworkChuck/ai-in-the-terminal.git",
+    "local_path": "ai-in-the-terminal",
+    "license": "UNKNOWN",
+    "notes": ""
+  },
+  {
+    "name": "n8n-terry-guide",
+    "url": "https://github.com/theNetworkChuck/n8n-terry-guide.git",
+    "local_path": "n8n-terry-guide",
+    "license": "UNKNOWN",
+    "notes": ""
+  },
+  {
+    "name": "danielmiessler",
+    "url": "https://github.com/danielmiessler/danielmiessler.git",
+    "local_path": "danielmiessler",
+    "license": "UNKNOWN",
+    "notes": "Large collection; check each subproject"
+  }
+]

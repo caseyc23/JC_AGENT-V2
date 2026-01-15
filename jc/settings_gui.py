@@ -1,0 +1,508 @@
+#!/usr/bin/env python3
+"""
+JC Agent Settings GUI
+Secure GUI for managing API keys and configuration
+"""
+
+import tkinter as tk
+from tkinter import ttk, messagebox
+import os
+import sys
+from pathlib import Path
+import stat
+import requests
+import tempfile
+from typing import Optional
+import re
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+def is_valid_port(port_str: str) -> bool:
+    """Return True if port_str is an integer between 1 and 65535."""
+    try:
+        p = int(port_str)
+        return 1 <= p <= 65535
+    except (ValueError, TypeError):
+        return False
+
+
+def write_env_atomic(env_path: Path, content: str) -> None:
+    """Atomically write `content` to `env_path` with secure permissions (600 where supported)."""
+    tmp_fd = None
+    tmp_path = None
+    try:
+        # Create temp file in same directory so os.replace will be atomic on same FS
+        dir_path = env_path.parent
+        fd, tmp_path = tempfile.mkstemp(dir=str(dir_path))
+        tmp_fd = fd
+        with os.fdopen(fd, 'w') as tmpf:
+            tmpf.write(content)
+            tmpf.flush()
+            os.fsync(tmpf.fileno())
+        # Set secure permissions before replacing
+        if sys.platform != "win32":
+            os.chmod(tmp_path, stat.S_IRUSR | stat.S_IWUSR)  # 0o600
+        os.replace(tmp_path, env_path)
+    except Exception:
+        # Cleanup temp file on error
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                logger.exception("Failed to remove temp file %s", tmp_path)
+        raise
+
+
+def read_env_file(env_path: Path) -> Optional[str]:
+    """Return the contents of `env_path` or None if the file does not exist."""
+    if not env_path.exists():
+        return None
+    with open(env_path, 'r') as f:
+        return f.read()
+
+
+# Configuration constants
+DEFAULT_MODELS = [
+    "openai/gpt-4o-mini",
+    "openai/gpt-4o",
+    "anthropic/claude-3.5-sonnet",
+    "anthropic/claude-3-haiku",
+    "google/gemini-pro",
+    "meta-llama/llama-3.1-8b-instruct"
+]
+DEFAULT_MODEL = "openai/gpt-4o-mini"
+API_TIMEOUT = 10  # seconds for API connection tests
+
+
+class JCSettingsGUI:
+    """Secure settings window for JC Agent configuration"""
+    
+    def __init__(self):
+        self.base_dir = Path(__file__).parent
+        self.env_file = self.base_dir / ".env"
+        
+        # Create main window
+        self.root = tk.Tk()
+        self.root.title("JC Agent - Settings")
+        self.root.geometry("600x700")
+        self.root.resizable(False, False)
+        
+        # Dark theme colors (matching JC branding)
+        self.bg_color = "#1e1e1e"
+        self.fg_color = "#ffffff"
+        self.input_bg = "#2d2d2d"
+        self.button_bg = "#0078d4"
+        self.button_hover = "#106ebe"
+        self.accent_color = "#00ff00"  # JC green
+        
+        # Configure root window
+        self.root.configure(bg=self.bg_color)
+        
+        # Password visibility toggle
+        self.show_passwords = tk.BooleanVar(value=False)
+        
+        # Initialize UI
+        self._create_widgets()
+        self._load_existing_config()
+        self._center_window()
+        
+    def _create_widgets(self):
+        """Create all UI widgets"""
+        # Main container with padding
+        main_frame = tk.Frame(self.root, bg=self.bg_color)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        
+        # Title
+        title_label = tk.Label(
+            main_frame,
+            text="JC Agent Settings",
+            font=("Segoe UI", 20, "bold"),
+            bg=self.bg_color,
+            fg=self.accent_color
+        )
+        title_label.pack(pady=(0, 20))
+        
+        # Subtitle
+        subtitle_label = tk.Label(
+            main_frame,
+            text="Configure your API keys and preferences securely",
+            font=("Segoe UI", 10),
+            bg=self.bg_color,
+            fg="#888888"
+        )
+        subtitle_label.pack(pady=(0, 20))
+        
+        # Settings frame
+        settings_frame = tk.Frame(main_frame, bg=self.bg_color)
+        settings_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # LLM Provider
+        self._create_label(settings_frame, "LLM Provider:", row=0)
+        self.provider_var = tk.StringVar(value="openrouter")
+        provider_combo = ttk.Combobox(
+            settings_frame,
+            textvariable=self.provider_var,
+            values=["openrouter", "openai", "ollama", "huggingface"],
+            state="readonly",
+            width=40
+        )
+        provider_combo.grid(row=0, column=1, pady=10, sticky="w")
+        
+        # OpenRouter API Key
+        self._create_label(settings_frame, "OpenRouter API Key:", row=1)
+        self.openrouter_key_var = tk.StringVar()
+        self.openrouter_entry = tk.Entry(
+            settings_frame,
+            textvariable=self.openrouter_key_var,
+            show="•",
+            width=42,
+            bg=self.input_bg,
+            fg=self.fg_color,
+            insertbackground=self.fg_color
+        )
+        self.openrouter_entry.grid(row=1, column=1, pady=10, sticky="w")
+        
+        # OpenAI API Key
+        self._create_label(settings_frame, "OpenAI API Key:", row=2)
+        self.openai_key_var = tk.StringVar()
+        self.openai_entry = tk.Entry(
+            settings_frame,
+            textvariable=self.openai_key_var,
+            show="•",
+            width=42,
+            bg=self.input_bg,
+            fg=self.fg_color,
+            insertbackground=self.fg_color
+        )
+        self.openai_entry.grid(row=2, column=1, pady=10, sticky="w")
+        
+        # HuggingFace API Key
+        self._create_label(settings_frame, "HuggingFace API Key:", row=3)
+        self.huggingface_key_var = tk.StringVar()
+        self.huggingface_entry = tk.Entry(
+            settings_frame,
+            textvariable=self.huggingface_key_var,
+            show="•",
+            width=42,
+            bg=self.input_bg,
+            fg=self.fg_color,
+            insertbackground=self.fg_color
+        )
+        self.huggingface_entry.grid(row=3, column=1, pady=10, sticky="w")
+        
+        # Default Model
+        self._create_label(settings_frame, "Default Model:", row=4)
+        self.model_var = tk.StringVar(value=DEFAULT_MODEL)
+        model_combo = ttk.Combobox(
+            settings_frame,
+            textvariable=self.model_var,
+            values=DEFAULT_MODELS,
+            width=40
+        )
+        model_combo.grid(row=4, column=1, pady=10, sticky="w")
+        
+        # API Port
+        self._create_label(settings_frame, "API Port:", row=5)
+        self.port_var = tk.StringVar(value="8000")
+        port_entry = tk.Entry(
+            settings_frame,
+            textvariable=self.port_var,
+            width=42,
+            bg=self.input_bg,
+            fg=self.fg_color,
+            insertbackground=self.fg_color
+        )
+        port_entry.grid(row=5, column=1, pady=10, sticky="w")
+        
+        # Show/Hide passwords checkbox
+        show_passwords_check = tk.Checkbutton(
+            settings_frame,
+            text="Show API Keys",
+            variable=self.show_passwords,
+            command=self._toggle_password_visibility,
+            bg=self.bg_color,
+            fg=self.fg_color,
+            selectcolor=self.input_bg,
+            activebackground=self.bg_color,
+            activeforeground=self.fg_color
+        )
+        show_passwords_check.grid(row=6, column=1, pady=20, sticky="w")
+        
+        # Buttons frame
+        buttons_frame = tk.Frame(main_frame, bg=self.bg_color)
+        buttons_frame.pack(pady=20)
+        
+        # Test Connection button
+        test_button = tk.Button(
+            buttons_frame,
+            text="Test Connection",
+            command=self._test_connection,
+            bg=self.button_bg,
+            fg=self.fg_color,
+            activebackground=self.button_hover,
+            activeforeground=self.fg_color,
+            relief=tk.FLAT,
+            padx=20,
+            pady=10,
+            font=("Segoe UI", 10, "bold"),
+            cursor="hand2"
+        )
+        test_button.pack(side=tk.LEFT, padx=10)
+        
+        # Save button
+        save_button = tk.Button(
+            buttons_frame,
+            text="Save Keys",
+            command=self._save_config,
+            bg=self.accent_color,
+            fg=self.bg_color,
+            activebackground="#00cc00",
+            activeforeground=self.bg_color,
+            relief=tk.FLAT,
+            padx=20,
+            pady=10,
+            font=("Segoe UI", 10, "bold"),
+            cursor="hand2"
+        )
+        save_button.pack(side=tk.LEFT, padx=10)
+        
+        # Status label
+        self.status_label = tk.Label(
+            main_frame,
+            text="",
+            font=("Segoe UI", 9),
+            bg=self.bg_color,
+            fg="#888888"
+        )
+        self.status_label.pack(pady=10)
+        
+    def _create_label(self, parent, text, row):
+        """Create a label with consistent styling"""
+        label = tk.Label(
+            parent,
+            text=text,
+            font=("Segoe UI", 10),
+            bg=self.bg_color,
+            fg=self.fg_color,
+            anchor="w"
+        )
+        label.grid(row=row, column=0, pady=10, sticky="w", padx=(0, 10))
+        
+    def _toggle_password_visibility(self):
+        """Toggle password field visibility"""
+        show_char = "" if self.show_passwords.get() else "•"
+        self.openrouter_entry.config(show=show_char)
+        self.openai_entry.config(show=show_char)
+        self.huggingface_entry.config(show=show_char)
+        
+    def _load_existing_config(self) -> None:
+        """Load existing configuration from .env file"""
+        content = read_env_file(self.env_file)
+        if not content:
+            return
+
+        try:
+            for line in content.splitlines():
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+
+                if '=' in line:
+                    key, value = line.split('=', 1)
+                    key = key.strip()
+                    value = value.strip()
+
+                    if key == "JC_PROVIDER":
+                        self.provider_var.set(value)
+                    elif key == "OPENROUTER_API_KEY":
+                        self.openrouter_key_var.set(value)
+                    elif key == "OPENAI_API_KEY":
+                        self.openai_key_var.set(value)
+                    elif key == "HUGGINGFACE_API_KEY":
+                        self.huggingface_key_var.set(value)
+                    elif key == "JC_OPENROUTER_MODEL":
+                        self.model_var.set(value)
+                    elif key == "JC_PORT":
+                        self.port_var.set(value)
+
+            self._update_status("Loaded existing configuration", "#00ff00")
+        except Exception as e:
+            # Don't include secret contents in error messages
+            self._update_status(f"Error loading config: {str(e)}", "#ff0000")
+            
+    def _save_config(self) -> None:
+        """Save configuration to .env file"""
+        try:
+            # Prepare content
+            content = "# JC-Agent Configuration\n"
+            content += f"JC_PROVIDER={self.provider_var.get()}\n"
+            
+            openrouter_key = self.openrouter_key_var.get().strip()
+            if openrouter_key:
+                content += f"OPENROUTER_API_KEY={openrouter_key}\n"
+                
+            openai_key = self.openai_key_var.get().strip()
+            if openai_key:
+                content += f"OPENAI_API_KEY={openai_key}\n"
+                
+            huggingface_key = self.huggingface_key_var.get().strip()
+            if huggingface_key:
+                content += f"HUGGINGFACE_API_KEY={huggingface_key}\n"
+                
+            content += f"JC_OPENROUTER_MODEL={self.model_var.get()}\n"
+            content += f"JC_PORT={self.port_var.get()}\n"
+            
+            # Validate port
+            if not is_valid_port(self.port_var.get()):
+                self._update_status("Error: Invalid port", "#ff0000")
+                messagebox.showerror("Error", "Please enter a valid port number (1-65535)")
+                return
+
+            # Write atomically with secure permissions
+            write_env_atomic(self.env_file, content)
+
+            self._update_status("Configuration saved successfully! ✓", "#00ff00")
+            messagebox.showinfo("Success", "Settings saved successfully!")
+            
+        except Exception as e:
+            self._update_status(f"Error saving config: {str(e)}", "#ff0000")
+            messagebox.showerror("Error", f"Failed to save settings:\n{str(e)}")
+            
+    def _test_connection(self):
+        """Test API connection with current settings"""
+        provider = self.provider_var.get()
+        
+        try:
+            if provider == "openrouter":
+                api_key = self.openrouter_key_var.get().strip()
+                if not api_key:
+                    self._update_status("Error: OpenRouter API key is empty", "#ff0000")
+                    messagebox.showerror("Error", "Please enter an OpenRouter API key")
+                    return
+                    
+                # Test OpenRouter API
+                self._update_status("Testing OpenRouter connection...", "#ffff00")
+                self.root.update()
+                
+                url = "https://openrouter.ai/api/v1/models"
+                headers = {
+                    "Authorization": f"Bearer {api_key}",
+                }
+                
+                response = requests.get(url, headers=headers, timeout=API_TIMEOUT)
+                
+                if response.status_code == 200:
+                    self._update_status("OpenRouter connection successful! ✓", "#00ff00")
+                    messagebox.showinfo("Success", "API connection test passed!")
+                else:
+                    self._update_status(f"OpenRouter test failed: {response.status_code}", "#ff0000")
+                    messagebox.showerror("Error", f"Connection test failed with status {response.status_code}")
+                    
+            elif provider == "openai":
+                api_key = self.openai_key_var.get().strip()
+                if not api_key:
+                    self._update_status("Error: OpenAI API key is empty", "#ff0000")
+                    messagebox.showerror("Error", "Please enter an OpenAI API key")
+                    return
+                    
+                # Test OpenAI API
+                self._update_status("Testing OpenAI connection...", "#ffff00")
+                self.root.update()
+                
+                url = "https://api.openai.com/v1/models"
+                headers = {
+                    "Authorization": f"Bearer {api_key}",
+                }
+                
+                response = requests.get(url, headers=headers, timeout=API_TIMEOUT)
+                
+                if response.status_code == 200:
+                    self._update_status("OpenAI connection successful! ✓", "#00ff00")
+                    messagebox.showinfo("Success", "API connection test passed!")
+                else:
+                    self._update_status(f"OpenAI test failed: {response.status_code}", "#ff0000")
+                    messagebox.showerror("Error", f"Connection test failed with status {response.status_code}")
+                    
+            elif provider == "huggingface":
+                api_key = self.huggingface_key_var.get().strip()
+                if not api_key:
+                    self._update_status("Error: HuggingFace API key is empty", "#ff0000")
+                    messagebox.showerror("Error", "Please enter a HuggingFace API key")
+                    return
+                    
+                # Test HuggingFace API
+                self._update_status("Testing HuggingFace connection...", "#ffff00")
+                self.root.update()
+                
+                url = "https://huggingface.co/api/whoami-v2"
+                headers = {
+                    "Authorization": f"Bearer {api_key}",
+                }
+                
+                response = requests.get(url, headers=headers, timeout=API_TIMEOUT)
+                
+                if response.status_code == 200:
+                    self._update_status("HuggingFace connection successful! ✓", "#00ff00")
+                    messagebox.showinfo("Success", "API connection test passed!")
+                else:
+                    self._update_status(f"HuggingFace test failed: {response.status_code}", "#ff0000")
+                    messagebox.showerror("Error", f"Connection test failed with status {response.status_code}")
+                    
+            elif provider == "ollama":
+                # Test local Ollama connection
+                self._update_status("Testing Ollama connection...", "#ffff00")
+                self.root.update()
+                
+                url = "http://localhost:11434/api/tags"
+                
+                response = requests.get(url, timeout=API_TIMEOUT)
+                
+                if response.status_code == 200:
+                    self._update_status("Ollama connection successful! ✓", "#00ff00")
+                    messagebox.showinfo("Success", "API connection test passed!")
+                else:
+                    self._update_status(f"Ollama test failed: {response.status_code}", "#ff0000")
+                    messagebox.showerror("Error", f"Connection test failed with status {response.status_code}")
+            else:
+                self._update_status(f"Testing not supported for {provider}", "#ffff00")
+                messagebox.showwarning("Warning", f"Connection testing is not yet supported for {provider}")
+                
+        except requests.exceptions.Timeout:
+            self._update_status("Connection timeout - check your internet", "#ff0000")
+            messagebox.showerror("Error", "Connection timeout. Please check your internet connection.")
+        except requests.exceptions.RequestException as e:
+            self._update_status(f"Connection error: {str(e)}", "#ff0000")
+            messagebox.showerror("Error", f"Connection failed:\n{str(e)}")
+        except Exception as e:
+            self._update_status(f"Test failed: {str(e)}", "#ff0000")
+            messagebox.showerror("Error", f"Test failed:\n{str(e)}")
+            
+    def _update_status(self, message, color="#888888"):
+        """Update status label with message and color"""
+        self.status_label.config(text=message, fg=color)
+        
+    def _center_window(self):
+        """Center the window on screen"""
+        self.root.update_idletasks()
+        width = self.root.winfo_width()
+        height = self.root.winfo_height()
+        x = (self.root.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.root.winfo_screenheight() // 2) - (height // 2)
+        self.root.geometry(f'{width}x{height}+{x}+{y}')
+        
+    def run(self):
+        """Run the GUI"""
+        self.root.mainloop()
+
+
+def main():
+    """Main entry point"""
+    app = JCSettingsGUI()
+    app.run()
+
+
+if __name__ == "__main__":
+    main()
