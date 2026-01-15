@@ -19,6 +19,12 @@ from .secrets import (
 )
 from .usage_logger import UsageLogger
 from .key_locker import KeyLocker
+from .error_handling import retry_with_backoff, CircuitBreaker
+from .logging_config import get_logger
+
+
+# Create circuit breaker for LLM calls (shared across all instances)
+llm_circuit_breaker = CircuitBreaker(failure_threshold=5, timeout=60)
 
 
 class LLMProvider:
@@ -36,7 +42,7 @@ class LLMProvider:
             self.provider = key_info.provider
         self.model = model or get_llm_model(self.provider)
         self.guardrails_manager = guardrails_manager
-        self.logger = logging.getLogger("JC-LLMProvider")
+        self.logger = get_logger(__name__)
 
     def call(self, messages, models=None, tools=None, tool_choice=None, context=None, max_tokens=512, temperature=0.7, stream=False, personality=None):
         prepared_messages = self._prepare_messages(messages, personality)
@@ -77,51 +83,53 @@ class LLMProvider:
             payload_messages.insert(0, {"role": "system", "content": f"You are {personality}."})
         return payload_messages
 
+    @retry_with_backoff(max_attempts=3, exceptions=(requests.exceptions.RequestException, requests.exceptions.Timeout))
     def _call_openrouter(self, messages, models, tools, tool_choice, context, max_tokens, temperature, stream):
-        payload = {
-            "messages": messages,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-            "stream": stream,
-        }
-        if models:
-            payload["models"] = models
-        else:
-            payload["models"] = [self.model]
-        if tools:
-            payload["tools"] = tools
-        if tool_choice:
-            payload["tool_choice"] = tool_choice
-        if context:
-            payload["context"] = context
+        with llm_circuit_breaker:
+            payload = {
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "stream": stream,
+            }
+            if models:
+                payload["models"] = models
+            else:
+                payload["models"] = [self.model]
+            if tools:
+                payload["tools"] = tools
+            if tool_choice:
+                payload["tool_choice"] = tool_choice
+            if context:
+                payload["context"] = context
 
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            }
 
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers=headers,
-            data=json.dumps(payload),
-            timeout=30,
-            stream=stream,
-        )
-        response.raise_for_status()
+            response = requests.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers=headers,
+                data=json.dumps(payload),
+                timeout=30,
+                stream=stream,
+            )
+            response.raise_for_status()
 
-        if stream:
-            result = ""
-            for chunk in response.iter_lines():
-                if chunk:
-                    part = chunk.decode("utf-8")
-                    result += part
+            if stream:
+                result = ""
+                for chunk in response.iter_lines():
+                    if chunk:
+                        part = chunk.decode("utf-8")
+                        result += part
+                self._record_usage(result, operation="openrouter")
+                return result
+
+            data = response.json()
+            result = data["choices"][0]["message"]["content"]
             self._record_usage(result, operation="openrouter")
             return result
-
-        data = response.json()
-        result = data["choices"][0]["message"]["content"]
-        self._record_usage(result, operation="openrouter")
-        return result
 
     def _call_openai(self, messages, max_tokens, temperature):
         url = "https://api.openai.com/v1/chat/completions"
@@ -143,28 +151,30 @@ class LLMProvider:
         self._record_usage(result, operation="openai")
         return result
 
+    @retry_with_backoff(max_attempts=3, exceptions=(requests.exceptions.RequestException,))
     def _call_huggingface(self, messages, max_tokens, temperature):
-        prompt = self._build_huggingface_prompt(messages)
-        url = f"https://api-inference.huggingface.co/models/{self.model}"
-        payload = {
-            "inputs": prompt,
-            "parameters": {
-                "max_new_tokens": max_tokens,
-                "temperature": temperature,
-            },
-            "options": {"wait_for_model": True},
-        }
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
+        with llm_circuit_breaker:
+            prompt = self._build_huggingface_prompt(messages)
+            url = f"https://api-inference.huggingface.co/models/{self.model}"
+            payload = {
+                "inputs": prompt,
+                "parameters": {
+                    "max_new_tokens": max_tokens,
+                    "temperature": temperature,
+                },
+                "options": {"wait_for_model": True},
+            }
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            }
 
-        response = requests.post(url, headers=headers, json=payload, timeout=30)
-        response.raise_for_status()
-        data = response.json()
-        result = self._extract_huggingface_text(data)
-        self._record_usage(result, operation="huggingface")
-        return result
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+            result = self._extract_huggingface_text(data)
+            self._record_usage(result, operation="huggingface")
+            return result
 
     def _record_usage(self, response: str, operation: str) -> None:
         if not self._key_info or not self._key_info.key_id:

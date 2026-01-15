@@ -19,10 +19,11 @@ import asyncio
 import json
 import os
 import threading
+from datetime import datetime
 from pathlib import Path
 from typing import Any, AsyncGenerator, TypedDict, List, Optional, Dict
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Depends
 from pydantic import BaseModel
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -31,10 +32,28 @@ from jc.key_routes import router as keys_router
 from jc.secrets import get_effective_provider, get_llm_api_key, get_llm_model, load_env
 from jc.key_locker import STORAGE_PATH as JC_STORAGE_PATH
 from jc.workspace_indexer import index_workspace, folder_size
+from jc.logging_config import setup_logging, get_logger
+from jc.error_handling import handle_errors, CircuitBreaker
+from jc.auth import get_current_user, get_current_user_optional, User
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 import shutil
 
 
 _BASE_DIR = Path(__file__).resolve().parent
+_LOG_FILE = _BASE_DIR / "jc_agent.log"
+
+# Setup structured logging
+logger = setup_logging(
+    log_level=os.getenv("LOG_LEVEL", "INFO"),
+    log_file=_LOG_FILE,
+    json_format=False
+)
+
+# Setup rate limiting
+limiter = Limiter(key_func=get_remote_address)
+
 _PUBLIC_DIR = _BASE_DIR / "public"
 _env_loaded = False
 
@@ -125,9 +144,23 @@ class ChatResponse(TypedDict):
 
 
 app = FastAPI(title="JC Agent API")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 if _PUBLIC_DIR.exists():
     app.mount("/public", StaticFiles(directory=str(_PUBLIC_DIR)), name="public")
 app.include_router(keys_router)
+
+
+# Global error handler
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    """Handle all unhandled exceptions."""
+    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    return HTTPException(
+        status_code=500,
+        detail="An internal server error occurred. Please check the logs."
+    )
 
 
 @app.get("/keys.html", include_in_schema=False)
@@ -151,21 +184,20 @@ def chat():
 
 
 @app.post("/api/chat")
-async def api_chat(payload: ChatRequest) -> ChatResponse:
+@limiter.limit("10/minute")
+@handle_errors(default_value={"response": "Sorry, I encountered an error. Please try again."})
+async def api_chat(payload: ChatRequest, user: User = Depends(get_current_user)) -> ChatResponse:
     """Chat endpoint used by the bundled web UI (`templates/chat.html`)."""
     _ensure_env_loaded()
-
+    
+    logger.info(f"Chat request from user: {user.username}")
     message = (payload.message or "").strip()
     if not message:
         return {"response": "Say something and I'll respond."}
 
-    try:
-        jc = _get_jc()
-        response = await jc.process_message(message)
-        return {"response": response}
-    except Exception:
-        # Keep response JSON-shape stable for the frontend.
-        return {
+    jc = _get_jc()
+    response = await jc.process_message(message)
+    return {"response": response}
             "response": "Sorry — I hit an error processing that. Check `jc_agent.log` for details.",
         }
 
@@ -196,7 +228,8 @@ class DeleteRequest(BaseModel):
 
 
 @app.post("/ask-questions")
-def ask_questions(payload: AskRequest):
+@limiter.limit("20/minute")
+async def ask_questions(payload: AskRequest, user: User = Depends(get_current_user)):
     """Generate prioritized clarifying questions for a workspace.
 
     The endpoint accepts a compact workspace metadata payload and returns a
@@ -204,14 +237,16 @@ def ask_questions(payload: AskRequest):
     implementation falls back to a deterministic mock so it can be used offline.
     """
     from jc.ask_questions import generate_clarifying_questions
-
+    
+    logger.info(f"Ask questions request from user: {user.username}")
     meta = payload.dict()
     questions = generate_clarifying_questions(meta)
     return {"workspaceId": payload.workspaceId, "questions": questions}
 
 
 @app.post("/events")
-def events(req: EventRequest):
+@limiter.limit("50/minute")
+async def events(req: EventRequest, user: User = Depends(get_current_user)):
     """Accept workspace events (watcher, index-requests, etc.) and persist them.
 
     If an index-request event is received the server will run a workspace index
@@ -347,6 +382,7 @@ async def api_chat_stream(message: str = Query(..., description="Message to send
 
 @app.get("/health")
 def health() -> HealthResponse:
+    """Basic health check endpoint - no authentication required."""
     _ensure_env_loaded()
 
     provider = get_effective_provider()
@@ -358,6 +394,95 @@ def health() -> HealthResponse:
         "model": model,
         "has_llm_key": bool(get_llm_api_key(provider)),
     }
+
+
+@app.get("/health/detailed")
+async def health_detailed(user: User = Depends(get_current_user)):
+    """Detailed health check with system status - requires authentication."""
+    import sqlite3
+    import psutil
+    from jc.key_locker import KeyLocker
+    
+    _ensure_env_loaded()
+    
+    health_status = {
+        "status": "ok",
+        "timestamp": datetime.now().isoformat(),
+        "checks": {}
+    }
+    
+    # Check LLM provider
+    try:
+        provider = get_effective_provider()
+        model = get_llm_model(provider)
+        has_key = bool(get_llm_api_key(provider))
+        health_status["checks"]["llm"] = {
+            "status": "ok" if has_key else "warning",
+            "provider": provider,
+            "model": model,
+            "has_key": has_key
+        }
+    except Exception as e:
+        health_status["checks"]["llm"] = {
+            "status": "error",
+            "error": str(e)
+        }
+        health_status["status"] = "degraded"
+    
+    # Check database
+    try:
+        from jc import JC
+        db_path = Path.home() / ".jc-agent" / "brain.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("SELECT 1").fetchone()
+        conn.close()
+        health_status["checks"]["database"] = {
+            "status": "ok",
+            "path": str(db_path)
+        }
+    except Exception as e:
+        health_status["checks"]["database"] = {
+            "status": "error",
+            "error": str(e)
+        }
+        health_status["status"] = "degraded"
+    
+    # Check KeyLocker
+    try:
+        locker = KeyLocker()
+        keys = locker.list_keys()
+        health_status["checks"]["keylocker"] = {
+            "status": "ok",
+            "keys_count": len(keys)
+        }
+    except Exception as e:
+        health_status["checks"]["keylocker"] = {
+            "status": "error",
+            "error": str(e)
+        }
+        health_status["status"] = "degraded"
+    
+    # Check system resources
+    try:
+        memory = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+        health_status["checks"]["system"] = {
+            "status": "ok",
+            "memory_percent": memory.percent,
+            "disk_percent": disk.percent,
+            "cpu_count": psutil.cpu_count()
+        }
+        
+        if memory.percent > 90 or disk.percent > 90:
+            health_status["checks"]["system"]["status"] = "warning"
+            health_status["status"] = "degraded"
+    except Exception as e:
+        health_status["checks"]["system"] = {
+            "status": "error",
+            "error": str(e)
+        }
+    
+    return health_status
 
 
 if __name__ == "__main__":
