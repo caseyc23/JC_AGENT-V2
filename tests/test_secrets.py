@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -11,7 +12,9 @@ def test_get_llm_api_key_prefers_env(monkeypatch):
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.delenv("HUGGINGFACE_API_KEY", raising=False)
 
-    assert get_llm_api_key() == "openai-123"
+    # Mock KeyLocker to return None so env takes precedence
+    with patch('jc.secrets.KeyLocker.find_key_for_provider', return_value=None):
+        assert get_llm_api_key() == "openai-123"
 
 
 def test_get_llm_api_key_fallbacks_to_openrouter(monkeypatch):
@@ -19,7 +22,9 @@ def test_get_llm_api_key_fallbacks_to_openrouter(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-key-abc")
     monkeypatch.delenv("HUGGINGFACE_API_KEY", raising=False)
 
-    assert get_llm_api_key() == "or-key-abc"
+    # Mock KeyLocker to return None so env fallback works
+    with patch('jc.secrets.KeyLocker.find_key_for_provider', return_value=None):
+        assert get_llm_api_key() == "or-key-abc"
 
 
 def test_get_llm_api_key_handles_huggingface(monkeypatch):
@@ -27,14 +32,18 @@ def test_get_llm_api_key_handles_huggingface(monkeypatch):
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.setenv("HUGGINGFACE_API_KEY", "hf-token")
 
-    assert get_llm_api_key() == "hf-token"
+    # Mock KeyLocker to return None so env takes precedence
+    with patch('jc.secrets.KeyLocker.find_key_for_provider', return_value=None):
+        assert get_llm_api_key() == "hf-token"
 
 
 def test_get_effective_provider_respects_override(monkeypatch):
     monkeypatch.setenv("JC_PROVIDER", "huggingface")
     monkeypatch.setenv("HUGGINGFACE_API_KEY", "hf-token")
 
-    assert get_effective_provider() == "huggingface"
+    # Mock KeyLocker to avoid real credentials
+    with patch('jc.secrets.KeyLocker.find_key_for_provider', return_value=None):
+        assert get_effective_provider() == "huggingface"
 
 
 def test_get_llm_model_defaults_and_override(monkeypatch):

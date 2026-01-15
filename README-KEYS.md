@@ -105,4 +105,4 @@ export JC_HUGGINGFACE_MODEL=google/flan-t5-base
 export HUGGINGFACE_KEY_FILE=/path/to/locked/hf_key.txt
 ```
 
-Remember: you must generate your own Hugging Face API token from https://huggingface.co/settings/tokens and store it securely (the Key Locker UI or `HUGGINGFACE_KEY_FILE` as above). I cannot create or distribute keys for you.
+Remember: you must generate your own Hugging Face API token from <https://huggingface.co/settings/tokens> and store it securely (the Key Locker UI or `HUGGINGFACE_KEY_FILE` as above). I cannot create or distribute keys for you.
