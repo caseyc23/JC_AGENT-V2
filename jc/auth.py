@@ -23,8 +23,9 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60
 # API key from environment
 API_KEY = os.getenv("JC_API_KEY", "")
 
-# Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Password hashing - using pbkdf2_sha256 for Python 3.13 compatibility
+# Note: Bcrypt has issues with passlib on Python 3.13
+pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 # Security schemes
 bearer_scheme = HTTPBearer(auto_error=False)

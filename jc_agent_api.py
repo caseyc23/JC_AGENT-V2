@@ -23,7 +23,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, AsyncGenerator, TypedDict, List, Optional, Dict
 
-from fastapi import FastAPI, HTTPException, Query, Depends
+from fastapi import FastAPI, HTTPException, Query, Depends, Request
 from pydantic import BaseModel
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -35,6 +35,13 @@ from jc.workspace_indexer import index_workspace, folder_size
 from jc.logging_config import setup_logging, get_logger
 from jc.error_handling import handle_errors, CircuitBreaker
 from jc.auth import get_current_user, get_current_user_optional, User
+from jc.external_storage import (
+    get_storage_manager, 
+    discover_drives, 
+    get_drive_summary,
+    search_files as search_storage_files,
+    find_ai_models
+)
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -185,8 +192,12 @@ def chat():
 
 @app.post("/api/chat")
 @limiter.limit("10/minute")
-@handle_errors(default_value={"response": "Sorry, I encountered an error. Please try again."})
-async def api_chat(payload: ChatRequest, user: User = Depends(get_current_user)) -> ChatResponse:
+@handle_errors(fallback_value={"response": "Sorry, I encountered an error. Please try again."})
+async def api_chat(
+    request: Request, 
+    payload: ChatRequest, 
+    user: User = Depends(get_current_user)
+) -> ChatResponse:
     """Chat endpoint used by the bundled web UI (`templates/chat.html`)."""
     _ensure_env_loaded()
     
@@ -198,8 +209,6 @@ async def api_chat(payload: ChatRequest, user: User = Depends(get_current_user))
     jc = _get_jc()
     response = await jc.process_message(message)
     return {"response": response}
-            "response": "Sorry — I hit an error processing that. Check `jc_agent.log` for details.",
-        }
 
 
 class AskRequest(BaseModel):
@@ -229,7 +238,11 @@ class DeleteRequest(BaseModel):
 
 @app.post("/ask-questions")
 @limiter.limit("20/minute")
-async def ask_questions(payload: AskRequest, user: User = Depends(get_current_user)):
+async def ask_questions(
+    request: Request,
+    payload: AskRequest,
+    user: User = Depends(get_current_user)
+):
     """Generate prioritized clarifying questions for a workspace.
 
     The endpoint accepts a compact workspace metadata payload and returns a
@@ -246,7 +259,11 @@ async def ask_questions(payload: AskRequest, user: User = Depends(get_current_us
 
 @app.post("/events")
 @limiter.limit("50/minute")
-async def events(req: EventRequest, user: User = Depends(get_current_user)):
+async def events(
+    request: Request,
+    req: EventRequest,
+    user: User = Depends(get_current_user)
+):
     """Accept workspace events (watcher, index-requests, etc.) and persist them.
 
     If an index-request event is received the server will run a workspace index
@@ -483,6 +500,137 @@ async def health_detailed(user: User = Depends(get_current_user)):
         }
     
     return health_status
+
+
+# ===== External Storage Research Endpoints =====
+
+@app.get("/storage/discover")
+async def discover_storage(user: User = Depends(get_current_user)):
+    """Discover all available external storage devices.
+    
+    Returns list of detected drives with metadata.
+    """
+    logger.info(f"Storage discovery requested by user: {user.username}")
+    
+    try:
+        devices = discover_drives()
+        return {
+            "devices": [d.to_dict() for d in devices],
+            "count": len(devices)
+        }
+    except Exception as e:
+        logger.error(f"Storage discovery error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/storage/summary")
+async def storage_summary(user: User = Depends(get_current_user)):
+    """Get a human-readable summary of all external storage.
+    
+    Returns formatted summary with drive info, special locations, and index stats.
+    """
+    logger.info(f"Storage summary requested by user: {user.username}")
+    
+    try:
+        summary = get_drive_summary()
+        return {"summary": summary}
+    except Exception as e:
+        logger.error(f"Storage summary error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/storage/index")
+async def index_storage(
+    request: Request,
+    drive: str = Query(..., description="Drive letter or mount point (e.g., 'G:', '/mnt/usb')"),
+    max_files: int = Query(10000, description="Maximum files to index"),
+    user: User = Depends(get_current_user)
+):
+    """Index files on an external drive for research.
+    
+    This scans the drive and indexes important files (AI models, docs, code, data).
+    Large drives may take several minutes to index.
+    """
+    logger.info(f"Storage indexing requested by user {user.username}: drive={drive}, max_files={max_files}")
+    
+    try:
+        storage_mgr = get_storage_manager()
+        indexed_count = storage_mgr.index_drive(drive, max_files)
+        
+        return {
+            "drive": drive,
+            "indexed_count": indexed_count,
+            "message": f"Successfully indexed {indexed_count} files from {drive}"
+        }
+    except Exception as e:
+        logger.error(f"Storage indexing error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/storage/search")
+async def search_storage(
+    query: str = Query(..., description="Search query"),
+    file_types: Optional[str] = Query(None, description="Comma-separated file extensions (e.g., '.py,.md')"),
+    drives: Optional[str] = Query(None, description="Comma-separated drive letters"),
+    limit: int = Query(50, description="Maximum results"),
+    user: User = Depends(get_current_user)
+):
+    """Search indexed files on external storage.
+    
+    Search by filename, path, keywords, or description.
+    """
+    logger.info(f"Storage search requested by user {user.username}: query={query}")
+    
+    try:
+        # Parse filters
+        file_type_list = file_types.split(',') if file_types else None
+        drive_list = drives.split(',') if drives else None
+        
+        # Search
+        results = search_storage_files(
+            query=query,
+            file_types=file_type_list,
+            drives=drive_list,
+            limit=limit
+        )
+        
+        return {
+            "query": query,
+            "count": len(results),
+            "results": [r.to_dict() for r in results]
+        }
+    except Exception as e:
+        logger.error(f"Storage search error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/storage/ai-models")
+async def list_ai_models(user: User = Depends(get_current_user)):
+    """Find all AI models on external storage.
+    
+    Returns list of .gguf, .safetensors, .pt, .pth, .onnx files.
+    """
+    logger.info(f"AI models list requested by user: {user.username}")
+    
+    try:
+        models = find_ai_models()
+        
+        # Group by drive for better presentation
+        by_drive = {}
+        for model in models:
+            drive = model.drive
+            if drive not in by_drive:
+                by_drive[drive] = []
+            by_drive[drive].append(model.to_dict())
+        
+        return {
+            "count": len(models),
+            "by_drive": by_drive,
+            "models": [m.to_dict() for m in models]
+        }
+    except Exception as e:
+        logger.error(f"AI models list error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":

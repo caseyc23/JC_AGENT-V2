@@ -67,7 +67,7 @@ def test_hash_password():
     
     assert hashed != password
     assert len(hashed) > 20
-    assert hashed.startswith("$2b$")  # bcrypt hash prefix
+    assert hashed.startswith("$pbkdf2-sha256$")  # pbkdf2 hash prefix
 
 
 def test_verify_password():
